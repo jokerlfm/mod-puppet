@@ -4,8 +4,8 @@
 
 class Puppet_WorldScript : public WorldScript
 {
-    public:
-        Puppet_WorldScript()
+public:
+    Puppet_WorldScript()
         : WorldScript("Puppet_WorldScript")
     {
     }
@@ -15,15 +15,15 @@ class Puppet_WorldScript : public WorldScript
         /* from skeleton module */
         if (!reload) {
             std::string conf_path = _CONF_DIR;
-            std::string cfg_file = conf_path+"/puppet.conf";
+            std::string cfg_file = conf_path + "/puppet.conf";
 #ifdef WIN32
-                cfg_file = "puppet.conf";
+            cfg_file = "puppet.conf";
 #endif
             std::string cfg_def_file = cfg_file + ".dist";
             sConfigMgr->LoadMore(cfg_def_file.c_str());
 
             sConfigMgr->LoadMore(cfg_file.c_str());
-        }        
+        }
     }
 
     void OnUpdate(uint32 pmElapsed)
@@ -34,45 +34,45 @@ class Puppet_WorldScript : public WorldScript
 
 class Puppet_PlayerScript : public PlayerScript
 {
-    public:
-        Puppet_PlayerScript()
-            : PlayerScript("Puppet_PlayerScript")
-        {
-        }
+public:
+    Puppet_PlayerScript()
+        : PlayerScript("Puppet_PlayerScript")
+    {
+    }
 
-        void OnBeforeUpdate(Player* player, uint32 p_time)
+    void OnBeforeUpdate(Player* player, uint32 p_time)
+    {
+        if (sPuppetMgr.activeAIMap.find(player->GetGUIDLow()) != sPuppetMgr.activeAIMap.end())
         {
+            sPuppetMgr.activeAIMap[player->GetGUIDLow()]->UpdateAI(p_time);
+        }
+    }
+
+    void OnChat(Player* pmSender, uint32 pmType, uint32 pmLanguage, std::string& pmContent, Player* pmReceiver)
+    {
+        if (sPuppetMgr.activeAIMap.find(pmReceiver->GetGUIDLow()) != sPuppetMgr.activeAIMap.end())
+        {
+            sPuppetMgr.activeAIMap[pmReceiver->GetGUIDLow()]->HandleChatCommand(pmSender, pmContent);
+        }
+    }
+
+    void OnChat(Player* pmSender, uint32 pmType, uint32 pmLanguage, std::string& pmContent, Group* pmGroup)
+    {
+        for (GroupReference* itr = pmGroup->GetFirstMember(); itr != NULL; itr = itr->next())
+        {
+            Player* player = itr->GetSource();
             if (sPuppetMgr.activeAIMap.find(player->GetGUIDLow()) != sPuppetMgr.activeAIMap.end())
             {
-                sPuppetMgr.activeAIMap[player->GetGUIDLow()]->UpdateAI(p_time);
+                sPuppetMgr.activeAIMap[player->GetGUIDLow()]->HandleChatCommand(pmSender, pmContent);
             }
         }
-
-        void OnChat(Player* pmSender, uint32 pmType, uint32 pmLanguage, std::string& pmContent, Player* pmReceiver)
-        {
-            if (sPuppetMgr.activeAIMap.find(pmReceiver->GetGUIDLow()) != sPuppetMgr.activeAIMap.end())
-            {
-                sPuppetMgr.activeAIMap[pmReceiver->GetGUIDLow()]->HandleChatCommand(pmSender, pmContent);
-            }
-        }
-
-        void OnChat(Player* pmSender, uint32 pmType, uint32 pmLanguage, std::string& pmContent, Group* pmGroup)
-        {
-            for (GroupReference* itr = pmGroup->GetFirstMember(); itr != NULL; itr = itr->next())
-            {
-                Player* player = itr->GetSource();
-                if (sPuppetMgr.activeAIMap.find(player->GetGUIDLow()) != sPuppetMgr.activeAIMap.end())
-                {
-                    sPuppetMgr.activeAIMap[player->GetGUIDLow()]->HandleChatCommand(pmSender, pmContent);
-                }
-            }
-        }
+    }
 };
 
 class Puppet_UnitScript : public UnitScript
 {
-    public:
-        Puppet_UnitScript()
+public:
+    Puppet_UnitScript()
         : UnitScript("Puppet_UnitScript", true)
     {
     }
@@ -90,27 +90,23 @@ public:
 
     std::vector<ChatCommand> GetCommands() const
     {
-        static std::vector<ChatCommand> vasCommandTable =
-        {
-            { "disable puppet",        SEC_GAMEMASTER,                        true, &HandleDisablePuppetCommand,                 "Disable puppet system" },
-            { "enable puppet",        SEC_GAMEMASTER,                        true, &HandleEnablePuppetCommand,                 "Enable puppet system" },
-        };
-
         static std::vector<ChatCommand> commandTable =
         {
-            { "vas",     SEC_GAMEMASTER,                            false, NULL,                      "", vasCommandTable },
+            { "disable puppet", SEC_GAMEMASTER, true, &HandleDisablePuppetCommand, "Disable puppet system" },
+            { "enable puppet", SEC_GAMEMASTER, true, &HandleEnablePuppetCommand, "Enable puppet system" },
         };
+
         return commandTable;
     }
 
     static bool HandleDisablePuppetCommand(ChatHandler* handler, const char* args)
     {
-       
+
         return false;
     }
 
     static bool HandleEnablePuppetCommand(ChatHandler* handler, const char* /*args*/)
-    {        
+    {
         return false;
     }
 };
