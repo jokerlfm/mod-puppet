@@ -1,0 +1,14 @@
+[worldserver]
+
+##########################################
+#  	 Puppet system Configuration file    #
+##########################################
+
+Puppet.Enabled = 1
+Puppet.ReactDelay = 500
+Puppet.RandomPuppetMinLevel = 20
+Puppet.RandomPuppetMaxLevel = 30
+Puppet.RandomPuppetAccountPrefix = puppet
+Puppet.RandomPuppetAccountCount = 2
+Puppet.DeleteRandomPuppetAccounts = 1
+Puppet.TellAI = 1
