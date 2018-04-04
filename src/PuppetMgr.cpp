@@ -1,148 +1,293 @@
 #include "PuppetMgr.h"
 
-bool PuppetLoginQueryHolder::Initialize()
+PuppetCreator::PuppetCreator(uint32 pmMaxAccountCount, bool pmDeleteAccounts)
 {
-    SetSize(MAX_PLAYER_LOGIN_QUERY);
+    maxAccountCount = pmMaxAccountCount;
+    deleteAccounts = pmDeleteAccounts;    
+    puppetNamesMap.clear();
+    currentAccountNumber = 0;
+    currentDestClass = 0;
+    checkCharacterNameIndex = 0;
+    creatingState = PUPPET_CREATING_STATE::PUPPET_CREATING_STATE_PREPARING;
+}
 
-    bool res = true;
-    uint32 lowGuid = GUID_LOPART(m_guid);
+PuppetCreator::~PuppetCreator()
+{
 
-    PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER);
-    stmt->setUInt32(0, lowGuid);
-    res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_FROM, stmt);
+}
 
-    stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_AURAS);
-    stmt->setUInt32(0, lowGuid);
-    res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_AURAS, stmt);
-
-    stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_SPELL);
-    stmt->setUInt32(0, lowGuid);
-    res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_SPELLS, stmt);
-
-    stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_QUESTSTATUS);
-    stmt->setUInt32(0, lowGuid);
-    res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_QUEST_STATUS, stmt);
-
-    stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_DAILYQUESTSTATUS);
-    stmt->setUInt32(0, lowGuid);
-    res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_DAILY_QUEST_STATUS, stmt);
-
-    stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_WEEKLYQUESTSTATUS);
-    stmt->setUInt32(0, lowGuid);
-    res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_WEEKLY_QUEST_STATUS, stmt);
-
-    stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_MONTHLYQUESTSTATUS);
-    stmt->setUInt32(0, lowGuid);
-    res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_MONTHLY_QUEST_STATUS, stmt);
-
-    stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_SEASONALQUESTSTATUS);
-    stmt->setUInt32(0, lowGuid);
-    res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_SEASONAL_QUEST_STATUS, stmt);
-
-    stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_REPUTATION);
-    stmt->setUInt32(0, lowGuid);
-    res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_REPUTATION, stmt);
-
-    stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_INVENTORY);
-    stmt->setUInt32(0, lowGuid);
-    res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_INVENTORY, stmt);
-
-    stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_ACTIONS);
-    stmt->setUInt32(0, lowGuid);
-    res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_ACTIONS, stmt);
-
-    stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_MAILCOUNT);
-    stmt->setUInt32(0, lowGuid);
-    stmt->setUInt64(1, uint64(time(NULL)));
-    res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_MAIL_COUNT, stmt);
-
-    stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_MAILDATE);
-    stmt->setUInt32(0, lowGuid);
-    res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_MAIL_DATE, stmt);
-
-    stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_SOCIALLIST);
-    stmt->setUInt32(0, lowGuid);
-    res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_SOCIAL_LIST, stmt);
-
-    stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_HOMEBIND);
-    stmt->setUInt32(0, lowGuid);
-    res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_HOME_BIND, stmt);
-
-    stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_SPELLCOOLDOWNS);
-    stmt->setUInt32(0, lowGuid);
-    res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_SPELL_COOLDOWNS, stmt);
-
-    if (sWorld->getBoolConfig(CONFIG_DECLINED_NAMES_USED))
+void PuppetCreator::UpdateCreating()
+{
+    switch (creatingState)
     {
-        stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_DECLINEDNAMES);
-        stmt->setUInt32(0, lowGuid);
-        res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_DECLINED_NAMES, stmt);
+    case PUPPET_CREATING_STATE::PUPPET_CREATING_STATE_PREPARING:
+    {
+        sLog->outBasic("Prepare to create puppets");
+        QueryResult qr = WorldDatabase.Query("SELECT name_id, name FROM puppet_names order by rand()");
+        if (qr)
+        {
+            int nameIndex = 0;
+            do
+            {
+                Field* fields = qr->Fetch();
+                int eachID = fields[0].GetInt32();
+                std::string eachName = fields[1].GetString();
+                puppetNamesMap[nameIndex] = eachName;
+                nameIndex++;
+            } while (qr->NextRow());
+        }
+        else
+        {
+            sLog->outError("No names");
+        }
+        if (deleteAccounts)
+        {
+            creatingState = PUPPET_CREATING_STATE::PUPPET_CREATING_STATE_DELETING_ACCOUNT;
+        }
+        else
+        {
+            creatingState = PUPPET_CREATING_STATE::PUPPET_CREATING_STATE_CREATING_ACCOUNT;
+        }
+        break;
     }
+    case PUPPET_CREATING_STATE::PUPPET_CREATING_STATE_DELETING_ACCOUNT:
+    {
+        QueryResult results = LoginDatabase.PQuery("SELECT id FROM account where username like '%s%%'", sPuppetConfig.randomPuppetAccountPrefix.c_str());
+        if (results)
+        {
+            do
+            {
+                Field* fields = results->Fetch();
+                AccountMgr::DeleteAccount(fields[0].GetUInt32());
+            } while (results->NextRow());
+        }
+        CharacterDatabase.DirectExecute("delete FROM puppet_info");        
+        sLog->outBasic("Random puppet accounts deleted");
+        creatingState = PUPPET_CREATING_STATE::PUPPET_CREATING_STATE_CHECKING_DELETE;
+        break;
+    }
+    case PUPPET_CREATING_STATE::PUPPET_CREATING_STATE_CHECKING_DELETE:
+    {
+        QueryResult checkQR = LoginDatabase.PQuery("SELECT count(*) FROM account where username like '%s%%'", sPuppetConfig.randomPuppetAccountPrefix.c_str());
+        if (checkQR)
+        {
+            Field* countField = checkQR->Fetch();
+            int checkCount = countField[0].GetUInt32();
+            if (checkCount > 0)
+            {
+                sLog->outDetail("Random puppet accounts deleting...");
+                break;
+            }
+        }
+        QueryResult puppetInfoQR = CharacterDatabase.Query("SELECT count(*) FROM puppet_info");
+        if (puppetInfoQR)
+        {
+            Field* countField = puppetInfoQR->Fetch();
+            int checkCount = countField[0].GetUInt32();
+            if (checkCount > 0)
+            {
+                sLog->outDetail("Puppet info deleting...");
+                break;
+            }
+        }
+        sLog->outBasic("Random puppet accounts deletion checked");
+        creatingState = PUPPET_CREATING_STATE::PUPPET_CREATING_STATE_CREATING_ACCOUNT;
+        break;
+    }
+    case PUPPET_CREATING_STATE::PUPPET_CREATING_STATE_CREATING_ACCOUNT:
+    {
+        if (currentAccountNumber >= maxAccountCount)
+        {
+            sLog->outBasic("All %d random puppet accounts created.", currentAccountNumber);
+            creatingState = PUPPET_CREATING_STATE::PUPPET_CREATING_STATE_FINISHED;
+            break;
+        }
+        ostringstream out; out << sPuppetConfig.randomPuppetAccountPrefix << currentAccountNumber;
+        string accountName = out.str();
+        QueryResult results = LoginDatabase.PQuery("SELECT id FROM account where username = '%s'", accountName.c_str());
+        if (results)
+        {
+            sLog->outBasic("Random puppet accounts already exists");
+            creatingState = PUPPET_CREATING_STATE::PUPPET_CREATING_STATE_CREATING_CHARACTER;
+        }
+        else
+        {
+            string password = "88888888";
+            AccountMgr::CreateAccount(accountName, password);
+            sLog->outDetail("Created account %s  for random puppet", accountName.c_str());
+            creatingState = PUPPET_CREATING_STATE::PUPPET_CREATING_STATE_CHECKING_ACCOUNT;
+        }
+        currentDestClass = Classes::CLASS_WARRIOR;
+        break;
+    }
+    case PUPPET_CREATING_STATE::PUPPET_CREATING_STATE_CHECKING_ACCOUNT:
+    {
+        ostringstream out; out << sPuppetConfig.randomPuppetAccountPrefix << currentAccountNumber;
+        string accountName = out.str();
+        QueryResult results = LoginDatabase.PQuery("SELECT id FROM account where username = '%s'", accountName.c_str());
+        if (results)
+        {
+            sLog->outDetail("Account %s created", accountName.c_str());
+            creatingState = PUPPET_CREATING_STATE::PUPPET_CREATING_STATE_CREATING_CHARACTER;
+        }
+        sLog->outDetail("Random puppet accounts creating...");
+        break;
+    }
+    case PUPPET_CREATING_STATE::PUPPET_CREATING_STATE_CREATING_CHARACTER:
+    {
+        if (currentDestClass == Classes::CLASS_DEATH_KNIGHT || currentDestClass == 10)
+        {
+            currentDestClass++;
+            break;
+        }
+        ostringstream out; out << sPuppetConfig.randomPuppetAccountPrefix << currentAccountNumber;
+        string accountName = out.str();
 
-    stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_ACHIEVEMENTS);
-    stmt->setUInt32(0, lowGuid);
-    res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_ACHIEVEMENTS, stmt);
+        QueryResult accountResults = LoginDatabase.PQuery("SELECT id FROM account where username = '%s'", accountName.c_str());
+        if (!accountResults)
+        {
+            sLog->outError("Load account failed : %s", accountName.c_str());
+            break;
+        }
+        Field* fields = accountResults->Fetch();
+        uint32 accountID = fields[0].GetUInt32();
 
-    stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_CRITERIAPROGRESS);
-    stmt->setUInt32(0, lowGuid);
-    res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_CRITERIA_PROGRESS, stmt);
+        QueryResult characterQR = CharacterDatabase.PQuery("SELECT guid FROM characters WHERE account = '%u' and class = '%u'", accountID, currentDestClass);
+        if (characterQR)
+        {
+            sLog->outBasic("Character accountID : %u - class : %u already exists.", accountID, currentDestClass);
+            currentDestClass++;            
+            if (currentDestClass > Classes::CLASS_DRUID)
+            {
+                currentAccountNumber++;
+                creatingState = PUPPET_CREATING_STATE::PUPPET_CREATING_STATE_CREATING_ACCOUNT;
+            }
+            break;
+        }
 
-    stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_EQUIPMENTSETS);
-    stmt->setUInt32(0, lowGuid);
-    res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_EQUIPMENT_SETS, stmt);
+        while (true)
+        {
+            if (checkCharacterNameIndex < puppetNamesMap.size())
+            {
+                QueryResult qr = CharacterDatabase.PQuery("SELECT guid FROM characters where name = '%s'", puppetNamesMap[checkCharacterNameIndex].c_str());
+                if (qr)
+                {
+                    sLog->outError("Name : %s is already been taken", puppetNamesMap[checkCharacterNameIndex].c_str());
+                    checkCharacterNameIndex++;
+                    continue;
+                }
+                else
+                {
+                    sLog->outDetail("Name : %s is available", puppetNamesMap[checkCharacterNameIndex].c_str());
+                    break;
+                }
+            }
+            else
+            {
+                sLog->outError("No available names");
+                return;
+            }
+        }
 
-    stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_ENTRY_POINT);
-    stmt->setUInt32(0, lowGuid);
-    res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_ENTRY_POINT, stmt);
+        uint8 destClass = currentDestClass;
+        int isAlliance = currentAccountNumber % 2;
+        // debug
+        destClass = Classes::CLASS_WARRIOR;
+        isAlliance = 1;
 
-    stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_GLYPHS);
-    stmt->setUInt32(0, lowGuid);
-    res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_GLYPHS, stmt);
+        while (true)
+        {
+            uint8 gender = urand(0, 1);
+            uint8 race = 0;
+            if (isAlliance == 1)
+            {
+                race = sPuppetMgr.availableAllianceRaces[destClass][urand(0, sPuppetMgr.availableAllianceRaces[destClass].size() - 1)];
+            }
+            else
+            {
+                race = sPuppetMgr.availableHordeRaces[destClass][urand(0, sPuppetMgr.availableHordeRaces[destClass].size() - 1)];
+            }
 
-    stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_TALENTS);
-    stmt->setUInt32(0, lowGuid);
-    res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_TALENTS, stmt);
+            uint8 checkSkin = urand(0, 6);
+            uint8 checkFace = urand(0, 6);
+            uint8 checkHairStyle = urand(0, 6);
+            uint8 checkHairColor = urand(0, 6);
+            uint8 checkFacialHair = urand(0, 6);
+            uint8 outfitId = 0;
 
-    stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_PLAYER_ACCOUNT_DATA);
-    stmt->setUInt32(0, lowGuid);
-    res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_ACCOUNT_DATA, stmt);
+            WorldSession* session = new WorldSession(accountID, NULL, SEC_PLAYER, 2, 0, LOCALE_enUS, 0, false, true);
+            if (!session)
+            {
+                sLog->outError("Couldn't create session for random puppet account %d", accountID);
+                delete session;
+                break;
+            }
 
-    stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_SKILLS);
-    stmt->setUInt32(0, lowGuid);
-    res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_SKILLS, stmt);
+            Player *player = new Player(session);
+            WorldPacket wp;
+            CharacterCreateInfo* cci = new CharacterCreateInfo(puppetNamesMap[checkCharacterNameIndex], race, destClass, gender, checkSkin, checkFace, checkHairStyle, checkHairColor, checkFacialHair, outfitId, wp);
 
-    stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_RANDOMBG);
-    stmt->setUInt32(0, lowGuid);
-    res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_RANDOM_BG, stmt);
+            if (!player->Create(sObjectMgr->GenerateLowGuid(HighGuid::HIGHGUID_PLAYER), cci))
+            {
+                player->DeleteFromDB(player->GetGUID(), accountID, true, true);
+                delete session;
+                delete player;
+                sLog->outError("Unable to create random puppet for account %d - name: \"%s\"; race: %u; class: %u",
+                    accountID, puppetNamesMap[checkCharacterNameIndex].c_str(), race, destClass);
+                sLog->outDetail("Try again");
+                break;
+            }
+            player->SetLevel(1);
+            player->setCinematic(2);
+            player->SetAtLoginFlag(AT_LOGIN_NONE);
+            player->SaveToDB(true, true);
+            sLog->outDetail("Random puppet created for account %d - name: \"%s\"; race: %u; class: %u",
+                accountID, puppetNamesMap[checkCharacterNameIndex].c_str(), race, destClass);
 
-    stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_BANNED);
-    stmt->setUInt32(0, lowGuid);
-    res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_BANNED, stmt);
+            checkCharacterNameIndex++;
+            sPuppetMgr.activeAIMap[player->GetGUIDLow()] = new PuppetAI(sPuppetMgr.activeAIMap.size(), accountID, player->GetGUIDLow());
+            creatingState = PUPPET_CREATING_STATE::PUPPET_CREATING_STATE_CHECK_CHARACTER;
+            break;
+        }
+        break;
+    }
+    case PUPPET_CREATING_STATE::PUPPET_CREATING_STATE_CHECK_CHARACTER:
+    {
+        ostringstream out; out << sPuppetConfig.randomPuppetAccountPrefix << currentAccountNumber;
+        string accountName = out.str();
 
-    stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_QUESTSTATUSREW);
-    stmt->setUInt32(0, lowGuid);
-    res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_QUEST_STATUS_REW, stmt);
-
-    stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_MAIL_ASYNCH);
-    stmt->setUInt32(0, lowGuid);
-    res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_MAIL, stmt);
-
-    stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_BREW_OF_THE_MONTH);
-    stmt->setUInt32(0, lowGuid);
-    res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_BREW_OF_THE_MONTH, stmt);
-
-    stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_ACCOUNT_INSTANCELOCKTIMES);
-    stmt->setUInt32(0, m_accountId);
-    res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_INSTANCE_LOCK_TIMES, stmt);
-
-    return res;
+        QueryResult accountResults = LoginDatabase.PQuery("SELECT id FROM account where username = '%s'", accountName.c_str());
+        if (!accountResults)
+        {
+            sLog->outError("Load account failed : %s", accountName.c_str());
+            break;
+        }
+        Field* fields = accountResults->Fetch();
+        uint32 accountID = fields[0].GetUInt32();
+        QueryResult characterQR = CharacterDatabase.PQuery("SELECT guid FROM characters WHERE account = '%u' and class = '%u'", accountID, currentDestClass);
+        if (!characterQR)
+        {
+            sLog->outBasic("Character accountID : %u - class : %u created.", accountID, currentDestClass);
+            currentDestClass++;
+            if (currentDestClass > Classes::CLASS_DRUID)
+            {
+                currentAccountNumber++;
+                creatingState = PUPPET_CREATING_STATE::PUPPET_CREATING_STATE_CREATING_ACCOUNT;
+            }
+            else
+            {
+                creatingState = PUPPET_CREATING_STATE::PUPPET_CREATING_STATE_CREATING_CHARACTER;
+            }
+            break;
+        }
+        break;
+    }
+    }
 }
 
 PuppetMgr::PuppetMgr()
 {
-    validPuppetAccountsMap.clear();
-    validPuppetCharactersMap.clear();
-
+    pc = NULL;
     activeAIMap.clear();
 
     availableAllianceRaces.clear();
@@ -163,7 +308,7 @@ PuppetMgr::PuppetMgr()
     equipmentMap.clear();
     spellQuestsMap.clear();
 
-    puppetSystemState = PUPPET_SYSTEM_STATE::PUPPET_SYSTEM_STATE_LOADING_CONFIG;
+    puppetSystemState = PUPPET_SYSTEM_STATE::PUPPET_SYSTEM_STATE_CREATE_PUPPETS;
     Initialize();
 }
 
@@ -194,288 +339,18 @@ void PuppetMgr::ProcessPuppets(uint32 pmElapsed)
         case PUPPET_SYSTEM_STATE::PUPPET_SYSTEM_STATE_DISABLED:
         {
             break;
-        }
-        case PUPPET_SYSTEM_STATE::PUPPET_SYSTEM_STATE_LOADING_CONFIG:
-        {
-            sPuppetConfig.Initialize();
-            if (sPuppetConfig.enabled)
-            {
-                if (sPuppetConfig.deleteRandomPuppetAccounts)
-                {
-                    puppetSystemState = PUPPET_SYSTEM_STATE::PUPPET_SYSTEM_STATE_DELETING_ACCOUNTS;
-                }
-                else
-                {
-                    puppetSystemState = PUPPET_SYSTEM_STATE::PUPPET_SYSTEM_STATE_CREATE_PUPPETS;
-                }
-            }
-            else
-            {
-                puppetSystemState = PUPPET_SYSTEM_STATE::PUPPET_SYSTEM_STATE_DISABLED;
-            }
-            sLog->outBasic("Random puppet config loaded");
-            break;
-        }
-        case PUPPET_SYSTEM_STATE::PUPPET_SYSTEM_STATE_DELETING_ACCOUNTS:
-        {
-            QueryResult results = LoginDatabase.PQuery("SELECT id FROM account where username like '%s%%'", sPuppetConfig.randomPuppetAccountPrefix.c_str());
-            if (results)
-            {
-                do
-                {
-                    Field* fields = results->Fetch();
-                    AccountMgr::DeleteAccount(fields[0].GetUInt32());
-                } while (results->NextRow());
-            }
-            CharacterDatabase.DirectExecute("delete FROM puppet_info");
-            //CharacterDatabase.DirectExecute("delete FROM puppet_spells");
-            sLog->outBasic("Random puppet accounts deleted");
-            puppetSystemState = PUPPET_SYSTEM_STATE::PUPPET_SYSTEM_STATE_CHECKING_DELETE;
-            break;
-        }
-        case PUPPET_SYSTEM_STATE::PUPPET_SYSTEM_STATE_CHECKING_DELETE:
-        {
-            QueryResult checkQR = LoginDatabase.PQuery("SELECT count(*) FROM account where username like '%s%%'", sPuppetConfig.randomPuppetAccountPrefix.c_str());
-            if (checkQR)
-            {
-                Field* countField = checkQR->Fetch();
-                int checkCount = countField[0].GetUInt32();
-                if (checkCount > 0)
-                {
-                    sLog->outDetail("Random puppet accounts deleting...");
-                    break;
-                }
-            }
-            QueryResult puppetInfoQR = CharacterDatabase.Query("SELECT count(*) FROM puppet_info");
-            if (puppetInfoQR)
-            {
-                Field* countField = puppetInfoQR->Fetch();
-                int checkCount = countField[0].GetUInt32();
-                if (checkCount > 0)
-                {
-                    sLog->outDetail("Puppet info deleting...");
-                    break;
-                }
-            }
-            sLog->outBasic("Random puppet accounts deletion checked");
-            puppetSystemState = PUPPET_SYSTEM_STATE::PUPPET_SYSTEM_STATE_CREATING_ACCOUNTS;
-            break;
-        }
-        case PUPPET_SYSTEM_STATE::PUPPET_SYSTEM_STATE_CREATING_ACCOUNTS:
-        {
-            for (int accountNumber = 0; accountNumber < sPuppetConfig.randomPuppetAccountCount; ++accountNumber)
-            {
-                ostringstream out; out << sPuppetConfig.randomPuppetAccountPrefix << accountNumber;
-                string accountName = out.str();
-                QueryResult results = LoginDatabase.PQuery("SELECT id FROM account where username = '%s'", accountName.c_str());
-                if (results)
-                {
-                    continue;
-                }
-
-                string password = "88888888";
-                AccountMgr::CreateAccount(accountName, password);
-                sLog->outDetail("Account %s created for random puppet", accountName.c_str());
-            }
-            sLog->outBasic("Random puppet accounts created");
-            puppetSystemState = PUPPET_SYSTEM_STATE::PUPPET_SYSTEM_STATE_CHECKING_ACCOUNTS;
-            break;
-        }
-        case PUPPET_SYSTEM_STATE::PUPPET_SYSTEM_STATE_CHECKING_ACCOUNTS:
-        {
-            QueryResult checkQR = LoginDatabase.PQuery("SELECT count(*) FROM account where username like '%s%%'", sPuppetConfig.randomPuppetAccountPrefix.c_str());
-            if (checkQR)
-            {
-                Field* countField = checkQR->Fetch();
-                int checkCount = countField[0].GetUInt32();
-                if (checkCount >= sPuppetConfig.randomPuppetAccountCount)
-                {
-                    sLog->outBasic("Random puppet accounts creation checked");
-                    LoginDatabase.PExecute("UPDATE account SET expansion = '%u' where username like '%s%%'", 2, sPuppetConfig.randomPuppetAccountPrefix.c_str());
-                    puppetSystemState = PUPPET_SYSTEM_STATE::PUPPET_SYSTEM_STATE_CREATING_CHARACTERS;
-                    break;
-                }
-            }
-            sLog->outDetail("Random puppet accounts creating...");
-            break;
-        }
-        case PUPPET_SYSTEM_STATE::PUPPET_SYSTEM_STATE_CREATING_CHARACTERS:
-        {
-            std::unordered_map<int, std::string> puppetNamesMap = GenerateRandomPuppetNamesMap();
-
-            int checkAccountsCount = 0;
-            int checkTotalCharactersCount = 0;
-            int checkCharacterNamesCount = 0;
-            for (int accountNumber = 0; accountNumber < sPuppetConfig.randomPuppetAccountCount; ++accountNumber)
-            {
-                ostringstream out; out << sPuppetConfig.randomPuppetAccountPrefix << accountNumber;
-                string accountName = out.str();
-
-                QueryResult results = LoginDatabase.PQuery("SELECT id FROM account where username = '%s'", accountName.c_str());
-                if (!results)
-                {
-                    sLog->outError("Load account failed : %s", accountName.c_str());
-                    continue;
-                }
-                Field* fields = results->Fetch();
-                uint32 accountID = fields[0].GetUInt32();
-
-                int count = AccountMgr::GetCharactersCount(accountID);
-                if (count > 0)
-                {
-                    checkTotalCharactersCount += count;
-                    validPuppetAccountsMap[accountID] = count;
-                    continue;
-                }
-
-                // debug
-                //for (uint8 cls = CLASS_WARRIOR; cls <= CLASS_WARRIOR; ++cls)
-                for (uint8 cls = CLASS_WARRIOR; cls < MAX_CLASSES; ++cls)
-                {
-                    if (cls != 10 && cls != 6)
-                    {
-                        while (true)
-                        {
-                            if (checkCharacterNamesCount < puppetNamesMap.size())
-                            {
-                                QueryResult qr = CharacterDatabase.PQuery("SELECT guid FROM characters where name = '%s'", puppetNamesMap[checkCharacterNamesCount].c_str());
-                                if (qr)
-                                {
-                                    sLog->outError("Name : %s is already been taken", puppetNamesMap[checkCharacterNamesCount].c_str());
-                                    checkCharacterNamesCount++;
-                                    continue;
-                                }
-                                else
-                                {
-                                    sLog->outDetail("Name : %s is available", puppetNamesMap[checkCharacterNamesCount].c_str());
-                                    break;
-                                }
-                            }
-                            else
-                            {
-                                sLog->outError("No available names");
-                                return;
-                            }
-                        }
-
-                        uint8 destClass = cls;
-
-                        // debug
-                        destClass = Classes::CLASS_WARRIOR;
-
-                        sLog->outDetail("Creating new random puppet for class %d", destClass);
-                        int isAlliance = checkAccountsCount % 2;
-
-                        // debug
-                        isAlliance = 1;
-
-                        while (true)
-                        {
-                            uint8 gender = urand(0, 1);
-                            uint8 race = 0;
-                            if (isAlliance == 1)
-                            {
-                                race = availableAllianceRaces[destClass][urand(0, availableAllianceRaces[destClass].size() - 1)];
-                            }
-                            else
-                            {
-                                race = availableHordeRaces[destClass][urand(0, availableHordeRaces[destClass].size() - 1)];
-                            }
-
-                            // debug
-                            //race = RACE_NIGHTELF;
-
-                            uint8 checkSkin = urand(0, 6);
-                            uint8 checkFace = urand(0, 6);
-                            uint8 checkHairStyle = urand(0, 6);
-                            uint8 checkHairColor = urand(0, 6);
-                            uint8 checkFacialHair = urand(0, 6);
-                            uint8 outfitId = 0;
-
-                            WorldSession* session = new WorldSession(accountID, NULL, SEC_PLAYER, 2, 0, LOCALE_enUS, 0, false, true);
-                            if (!session)
-                            {
-                                sLog->outError("Couldn't create session for random puppet account %d", accountID);
-                                delete session;
-                                break;
-                            }
-
-                            Player *player = new Player(session);
-                            WorldPacket wp;
-                            CharacterCreateInfo* cci = new CharacterCreateInfo(puppetNamesMap[checkCharacterNamesCount], race, destClass, gender, checkSkin, checkFace, checkHairStyle, checkHairColor, checkFacialHair, outfitId, wp);
-
-                            if (!player->Create(sObjectMgr->GenerateLowGuid(HighGuid::HIGHGUID_PLAYER), cci))
-                            {
-                                player->DeleteFromDB(player->GetGUID(), accountID, true, true);
-                                delete session;
-                                delete player;
-                                sLog->outError("Unable to create random puppet for account %d - name: \"%s\"; race: %u; class: %u",
-                                    accountID, puppetNamesMap[checkCharacterNamesCount].c_str(), race, destClass);
-                                sLog->outDetail("Try again");
-                                continue;
-                            }
-                            player->SetLevel(1);
-                            player->setCinematic(2);
-                            player->SetAtLoginFlag(AT_LOGIN_NONE);                            
-                            player->SaveToDB(true, true);
-                            sLog->outDetail("Random puppet created for account %d - name: \"%s\"; race: %u; class: %u",
-                                accountID, puppetNamesMap[checkCharacterNamesCount].c_str(), race, destClass);
-                            break;
-                        }
-                        checkCharacterNamesCount++;
-                        validPuppetAccountsMap[accountID]++;
-                        checkTotalCharactersCount++;
-                    }
-                }
-
-                checkAccountsCount++;
-            }
-
-            sLog->outBasic("%d random puppet accounts with %d characters available", checkAccountsCount, checkTotalCharactersCount);
-            puppetSystemState = PUPPET_SYSTEM_STATE::PUPPET_SYSTEM_STATE_CHECKING_CHARACTERS;
-            break;
-        }
-        case PUPPET_SYSTEM_STATE::PUPPET_SYSTEM_STATE_CHECKING_CHARACTERS:
-        {
-            validPuppetCharactersMap.clear();
-            for (unordered_map<uint32, uint32>::iterator it = validPuppetAccountsMap.begin(); it != validPuppetAccountsMap.end(); it++)
-            {
-                QueryResult characterQR = CharacterDatabase.PQuery("SELECT guid FROM characters WHERE account = '%u'", it->first);
-                if (!characterQR)
-                {
-                    sLog->outDetail("Wait to check character again : %u", it->first);
-                    return;
-                }
-                do
-                {
-                    Field* characterField = characterQR->Fetch();
-                    uint32 guid = characterField[0].GetUInt32();
-                    validPuppetCharactersMap[it->first].insert(guid);
-                } while (characterQR->NextRow());
-
-                if (validPuppetCharactersMap[it->first].size() < it->second)
-                {
-                    sLog->outDetail("Wait to check character count again : %d - %d/%d", it->first, validPuppetCharactersMap[it->first].size(), it->second);
-                    return;
-                }
-            }
-            sLog->outBasic("characters creation checked");
-            puppetSystemState = PUPPET_SYSTEM_STATE::PUPPET_SYSTEM_STATE_CREATE_PUPPETS;
-            break;
-        }
+        }       
         case PUPPET_SYSTEM_STATE::PUPPET_SYSTEM_STATE_CREATE_PUPPETS:
         {
-            int checkEntry = 0;
-            for (unordered_map<uint32, set<uint32>>::iterator accountIT = validPuppetCharactersMap.begin(); accountIT != validPuppetCharactersMap.end(); accountIT++)
+            if (!pc)
             {
-                for (set<uint32>::iterator characterIT = accountIT->second.begin(); characterIT != accountIT->second.end(); characterIT++)
-                {
-                    PuppetAI* eachPAI = new PuppetAI(checkEntry, accountIT->first, *characterIT);
-                    activeAIMap[*characterIT] = eachPAI;                    
-                    checkEntry++;
-                }
+                pc = new PuppetCreator(sPuppetConfig.randomPuppetAccountCount, sPuppetConfig.deleteRandomPuppetAccounts);
             }
-            sLog->outBasic("All puppets created");
+            if (pc->creatingState != PUPPET_CREATING_STATE::PUPPET_CREATING_STATE_FINISHED)
+            {
+                pc->UpdateCreating();
+                break;
+            }
             puppetSystemState = PUPPET_SYSTEM_STATE::PUPPET_SYSTEM_STATE_LOGIN_PUPPETS;
             break;
         }
@@ -860,31 +735,6 @@ void PuppetMgr::LogoutAllPuppets()
         delete puppetWorldSessionPtr;  // finally delete the bot's WorldSession
     }
     activeAIMap.clear();
-}
-
-std::unordered_map<int, std::string> PuppetMgr::GenerateRandomPuppetNamesMap()
-{
-    std::unordered_map<int, std::string> result;
-
-    QueryResult qr = WorldDatabase.Query("SELECT name_id, name FROM puppet_names order by rand()");
-    if (qr)
-    {
-        int nameIndex = 0;
-        do
-        {
-            Field* fields = qr->Fetch();
-            int eachID = fields[0].GetInt32();
-            std::string eachName = fields[1].GetString();
-            result[nameIndex] = eachName;
-            nameIndex++;
-        } while (qr->NextRow());
-    }
-    else
-    {
-        sLog->outError("No names");
-    }
-
-    return result;
 }
 
 bool PuppetMgr::IsAlliance(uint8 race)

@@ -56,10 +56,10 @@ class PuppetAI
     }
 
 public:
-    PuppetAI(int pmEntry, uint32 pmAccountID, uint64 pmCharacterGUID)
+    PuppetAI(int pmEntry, uint32 pmAccountID, uint32 pmCharacterGUIDLow)
     {
         accountID = pmAccountID;
-        characterGUID = pmCharacterGUID;
+        characterGUIDLow = pmCharacterGUIDLow;
         sourcePlayer = NULL;
         masterPlayer = NULL;
         puppetState = PUPPET_STATE::PUPPET_STATE_LOCK;
@@ -109,7 +109,7 @@ public:
 
 private:
     uint32 accountID;
-    uint64 characterGUID;    
+    uint32 characterGUIDLow;
     QueryResultHolderFuture qrhf;
     uint32 prevTotalElapsed;
     uint32 checkElapsed;

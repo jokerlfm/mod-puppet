@@ -6,21 +6,45 @@
 #include "PuppetFactory.h"
 
 enum PUPPET_SYSTEM_STATE :uint8
-{
-    PUPPET_SYSTEM_STATE_LOADING_CONFIG = 0,
-    PUPPET_SYSTEM_STATE_DISABLED,
-    PUPPET_SYSTEM_STATE_DELETING_ACCOUNTS,
-    PUPPET_SYSTEM_STATE_CHECKING_DELETE,
-    PUPPET_SYSTEM_STATE_CREATING_ACCOUNTS,
-    PUPPET_SYSTEM_STATE_CHECKING_ACCOUNTS,
-    PUPPET_SYSTEM_STATE_CREATING_CHARACTERS,
-    PUPPET_SYSTEM_STATE_CHECKING_CHARACTERS,
+{    
+    PUPPET_SYSTEM_STATE_DISABLED = 0,
     PUPPET_SYSTEM_STATE_CREATE_PUPPETS,
     PUPPET_SYSTEM_STATE_LOGIN_PUPPETS,
     PUPPET_SYSTEM_STATE_UPDATING
 };
 
 class PuppetAI;
+
+enum PUPPET_CREATING_STATE :uint8
+{
+    PUPPET_CREATING_STATE_PREPARING,
+    PUPPET_CREATING_STATE_DELETING_ACCOUNT,
+    PUPPET_CREATING_STATE_CHECKING_DELETE,
+    PUPPET_CREATING_STATE_CREATING_ACCOUNT,
+    PUPPET_CREATING_STATE_CHECKING_ACCOUNT,
+    PUPPET_CREATING_STATE_CREATING_CHARACTER,
+    PUPPET_CREATING_STATE_CHECK_CHARACTER,
+    PUPPET_CREATING_STATE_FINISHED
+};
+
+class PuppetCreator
+{
+public:
+    PuppetCreator(uint32 pmMaxAccountCount, bool pmDeleteAccounts);
+    ~PuppetCreator();
+
+public:
+    void UpdateCreating();
+    uint8 creatingState;
+
+private:
+    std::unordered_map<int, std::string> puppetNamesMap;    
+    bool deleteAccounts;
+    uint32 maxAccountCount;    
+    uint32 currentAccountNumber;
+    uint8 currentDestClass;
+    uint32 checkCharacterNameIndex;
+};
 
 class PuppetMgr
 {
@@ -40,6 +64,9 @@ public:
     void LogoutAllPuppets();
     void OnPlayerLogout(Player* player);
     void OnPlayerLogin(Player* player);
+
+    map<uint8, vector<uint8> > availableAllianceRaces;
+    map<uint8, vector<uint8> > availableHordeRaces;
 
     unordered_map<uint8, unordered_map<uint32, WorldLocation>> teleportZoneCacheMap;
     unordered_map<uint32, uint32> arrowMap;
@@ -65,13 +92,7 @@ private:
     uint8 puppetSystemState;
     void Initialize();
 
-    std::unordered_map<uint32, uint32> validPuppetAccountsMap;
-    unordered_map<uint32, set<uint32>> validPuppetCharactersMap;
-    
-    std::unordered_map<int, std::string> GenerateRandomPuppetNamesMap();
-
-    map<uint8, vector<uint8> > availableAllianceRaces;
-    map<uint8, vector<uint8> > availableHordeRaces;
+    PuppetCreator* pc;
 
     QueryResultHolderFuture puppetLoginQR;
 

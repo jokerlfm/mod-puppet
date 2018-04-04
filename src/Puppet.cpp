@@ -26,9 +26,17 @@ public:
         }
     }
 
+    void OnStartup()
+    {
+        sPuppetConfig.Initialize();
+    }
+
     void OnUpdate(uint32 pmElapsed)
     {
-        sPuppetMgr.ProcessPuppets(pmElapsed);
+        if (sPuppetConfig.enabled)
+        {
+            sPuppetMgr.ProcessPuppets(pmElapsed);
+        }
     }
 };
 

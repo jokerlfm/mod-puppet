@@ -72,7 +72,7 @@ void PuppetFactory::Randomize()
     puppet->SetMoney(urand(level * 1000, level * 5 * 1000));
     puppet->SaveToDB(false, false);
 
-    CharacterDatabase.PExecute("INSERT INTO puppet_info (`character_guid`, `specialty`) VALUES (%d, '%s')", puppet->GetGUID(), sPuppetMgr.activeAIMap[puppet->GetGUID()]->specialty.c_str());
+    CharacterDatabase.PExecute("INSERT INTO puppet_info (`character_guid`, `specialty`) VALUES (%d, '%s')", puppet->GetGUID(), sPuppetMgr.activeAIMap[puppet->GetGUIDLow()]->specialty.c_str());
     sLog->outBasic("Done.");
 }
 
@@ -129,7 +129,7 @@ void PuppetFactory::InitTalents()
     uint32 specNo1 = urand(0, 2);
     // debug
     specNo1 = 2;
-    sPuppetMgr.activeAIMap[puppet->GetGUID()]->specialty = sPuppetMgr.GetSpecialty(puppet->getClass(), specNo1);
+    sPuppetMgr.activeAIMap[puppet->GetGUIDLow()]->specialty = sPuppetMgr.GetSpecialty(puppet->getClass(), specNo1);
 
     InitTalents(specNo1);
 
